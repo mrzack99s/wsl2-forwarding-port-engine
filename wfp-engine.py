@@ -4,6 +4,7 @@ import json, os
 from pathlib import Path
 from cmds import *
 
+engineVersion = "0.2.0"
 # Create a front socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Bind the socket
@@ -19,20 +20,23 @@ def udp_forwarder(taskId, wsl_ip, front_port, dest_port):
     # Create a front socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # Bind the socket
-    frontAddr = ('0.0.0.0', int(front_port))
+    frontAddr = ("0.0.0.0", int(front_port))
     sock.bind(frontAddr)
 
     wslSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     wslAddr = (wsl_ip, int(dest_port))
 
     while True:
-        if not threadWorking[taskId]["status"]:
+        try:
+            if not threadWorking[taskId]["status"]:
+                break
+        except:
             break
         
         try:
             frontData, address = sock.recvfrom(65535)
             if frontData:
-                sock.sendto(frontData, wslAddr)
+                wslSock.sendto(frontData, wslAddr)
                 while True:
                     wslData, _ = wslSock.recvfrom(65535)
                     sock.sendto(wslData, address)
@@ -57,12 +61,12 @@ if os.path.isfile(homeDir + '\\.wfp-engine\\.wfp-routines.json'):
 
 if foundFile:
     try:
-        for task in tasks:
-            t = threading.Thread(target=udp_forwarder, args=(task["id"], task["ip_addr"], task["sport"], task["dport"], ))
+        for taskKey in tasks:
+            t = threading.Thread(target=udp_forwarder, args=(tasks[taskKey]["id"], tasks[taskKey]["ip_addr"], tasks[taskKey]["sport"], tasks[taskKey]["dport"], ))
             t.setDaemon(True)
             threadWorking.update({
-                                task["id"]:{
-                                    "id": task["id"],
+                                tasks[taskKey]["id"]:{
+                                    "id": tasks[taskKey]["id"],
                                     "status": True
                                 }
                             })
@@ -127,6 +131,7 @@ while True:
                         threadWorking[recvDataSplit[1]]["status"] = False
                         unallowFirewall(tasks[recvDataSplit[1]]["proto"],tasks[recvDataSplit[1]]["sport"])
                         del tasks[recvDataSplit[1]]
+                        del threadWorking[recvDataSplit[1]]
                         writeFile()
                         sock.sendto(b"SUCCESS", address)
                     else:
@@ -141,6 +146,21 @@ while True:
                         sock.sendto(b"SUCCESS", address)
                     else:
                         sock.sendto(b"ALREADY", address)
+            elif recvDataSplit[0] == "purge":
+                 if recvDataSplit[1] == "Y":
+                    for taskKey in tasks:
+                        print("stopping worker")
+                        threadWorking[tasks[taskKey]["id"]]["status"] = False
+                        unallowFirewall(tasks[taskKey]["proto"],tasks[taskKey]["sport"])
+                    tasks = {}
+                    threadWorking = {}
+                    writeFile()
+                    sock.sendto(b"SUCCESS", address)
+
+
+            elif recvDataSplit[0] == "get":
+                if recvDataSplit[1] == "engine_version":
+                    sock.sendto(engineVersion.encode(), address)
 
     except Exception as e:
         print(e)
