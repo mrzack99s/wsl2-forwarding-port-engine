@@ -16,13 +16,13 @@ VSVersionInfo(
         u'040904B0',
         [StringStruct(u'CompanyName', u'None'),
         StringStruct(u'FileDescription', u'WFP-Engine'),
-        StringStruct(u'FileVersion', u'v0.2.0'),
+        StringStruct(u'FileVersion', u'v0.3.0'),
         StringStruct(u'InternalName', u'cmd'),
 	StringStruct(u'Publisher', u'Chatdanai Phakaket'),
         StringStruct(u'LegalCopyright', u'Copyright Apache-2.0 License'),
         StringStruct(u'OriginalFilename', u'wfp-engine.exe'),
         StringStruct(u'ProductName', u'WFP-Engine'),
-        StringStruct(u'ProductVersion', u'v0.2.0')])
+        StringStruct(u'ProductVersion', u'v0.3.0')])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]

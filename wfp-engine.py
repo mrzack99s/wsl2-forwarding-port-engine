@@ -3,8 +3,10 @@ import threading
 import json, os
 from pathlib import Path
 from cmds import *
+from global_functions import *
+from hashlib import sha256
 
-engineVersion = "0.2.0"
+engineVersion = "0.3.0"
 # Create a front socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Bind the socket
@@ -44,11 +46,6 @@ def udp_forwarder(taskId, wsl_ip, front_port, dest_port):
         except:
             pass
 
-def writeFile():
-    f = open(homeDir + '\\.wfp-engine\\.wfp-routines.json', 'w')
-    json.dump(tasks,f, indent=3)
-    f.close()
-
 foundFile = False
 if os.path.isfile(homeDir + '\\.wfp-engine\\.wfp-routines.json'):
     try:
@@ -62,64 +59,82 @@ if os.path.isfile(homeDir + '\\.wfp-engine\\.wfp-routines.json'):
 if foundFile:
     try:
         for taskKey in tasks:
-            t = threading.Thread(target=udp_forwarder, args=(tasks[taskKey]["id"], tasks[taskKey]["ip_addr"], tasks[taskKey]["sport"], tasks[taskKey]["dport"], ))
-            t.setDaemon(True)
-            threadWorking.update({
-                                tasks[taskKey]["id"]:{
-                                    "id": tasks[taskKey]["id"],
-                                    "status": True
-                                }
-                            })
-            t.start()
+            if tasks[taskKey]["ip_addr"] == getWSLIPAddr():
+                t = threading.Thread(target=udp_forwarder, args=(tasks[taskKey]["id"], tasks[taskKey]["ip_addr"], tasks[taskKey]["sport"], tasks[taskKey]["dport"], ))
+                t.setDaemon(True)
+                threadWorking.update({
+                                    tasks[taskKey]["id"]:{
+                                        "id": tasks[taskKey]["id"],
+                                        "status": True
+                                    }
+                                })
+                t.start()
+            else:
+                if tasks[taskKey]["proto"] == "UDP":
+                    unallowFirewall(tasks[taskKey]["proto"],tasks[taskKey]["sport"])
+                    del tasks[taskKey]
+                    del threadWorking[tasks[taskKey]["id"]]
+                    writeFile(homeDir, tasks)
+
+                elif tasks[taskKey]["proto"] == "TCP":
+                    unallowFirewall(tasks[taskKey]["proto"], tasks[taskKey]["sport"])
+                    unforwardingTCP(tasks[taskKey]["sport"])
+                    del tasks[taskKey]
+                    writeFile(homeDir, tasks)
+
     except:
         pass
 
 while True:
     try:
-        recvData, address = sock.recvfrom(2048)
+        recvData, address = sock.recvfrom(65535)
         if recvData:
             recvDataSplit = recvData.decode().split("@")
             if recvDataSplit[0] == "create":
-                if recvDataSplit[2] == "UDP":
-                    if not recvDataSplit[1] in tasks:
-                        t = threading.Thread(target=udp_forwarder, args=(recvDataSplit[1], address[0], recvDataSplit[3], recvDataSplit[4], ))
+                newTask = {
+                            "ip_addr": address[0],
+                            "proto": recvDataSplit[1],
+                            "sport": recvDataSplit[2],
+                            "dport": recvDataSplit[3]
+                        }
+                hashId = sha256(json.dumps(newTask).encode()).hexdigest().encode().decode()
+                newTask.update({
+                    "id": hashId[:8],
+                })
+
+                if newTask["proto"] == "UDP":
+
+                    if not newTask["id"] in tasks:
+
+                        t = threading.Thread(target=udp_forwarder, args=(newTask["id"], newTask["ip_addr"], newTask["sport"], newTask["dport"], ))
                         t.setDaemon(True)
-                        tasks.update({
-                            recvDataSplit[1]:{
-                                "id": recvDataSplit[1],
-                                "ip_addr": address[0],
-                                "proto": recvDataSplit[2],
-                                "sport": recvDataSplit[3],
-                                "dport": recvDataSplit[4]
-                            }
-                        })
+
                         threadWorking.update({
-                            recvDataSplit[1]:{
-                                "id": recvDataSplit[1],
+                            newTask["id"]:{
+                                "id": newTask["id"],
                                 "status": True
                             }
                         })
+
+                        tasks.update({
+                            newTask["id"]: newTask
+                        })
+
                         t.start()
-                        allowFirewall(recvDataSplit[2],recvDataSplit[3])
-                        writeFile()
+                        allowFirewall(newTask["proto"],newTask["sport"])
+                        writeFile(homeDir, tasks)
                         sock.sendto(b"SUCCESS", address)
                     else:
                         sock.sendto(b"ALREADY", address)
 
-                elif recvDataSplit[2] == "TCP":
-                    if not recvDataSplit[1] in tasks:
-                        allowFirewall(recvDataSplit[2],recvDataSplit[3])
-                        tcpForwarding(address[0], recvDataSplit[3],recvDataSplit[4])
+                elif newTask["proto"] == "TCP":
+                    if not newTask["id"] in tasks:
+                        allowFirewall(newTask["proto"],newTask["sport"])
+                        tcpForwarding(newTask["ip_addr"], newTask["sport"], newTask["dport"])
                         tasks.update({
-                            recvDataSplit[1]: {
-                                "id": recvDataSplit[1],
-                                "ip_addr": address[0],
-                                "proto": recvDataSplit[2],
-                                "sport": recvDataSplit[3],
-                                "dport": recvDataSplit[4]
-                            }
+                            newTask["id"]: newTask
                         })
-                        writeFile()
+                        writeFile(homeDir, tasks)
                         sock.sendto(b"SUCCESS", address)
                     else:
                         sock.sendto(b"ALREADY", address)
@@ -132,7 +147,7 @@ while True:
                         unallowFirewall(tasks[recvDataSplit[1]]["proto"],tasks[recvDataSplit[1]]["sport"])
                         del tasks[recvDataSplit[1]]
                         del threadWorking[recvDataSplit[1]]
-                        writeFile()
+                        writeFile(homeDir, tasks)
                         sock.sendto(b"SUCCESS", address)
                     else:
                         sock.sendto(b"ALREADY", address)
@@ -142,10 +157,11 @@ while True:
                         unallowFirewall(tasks[recvDataSplit[1]]["proto"], tasks[recvDataSplit[1]]["sport"])
                         unforwardingTCP(tasks[recvDataSplit[1]]["sport"])
                         del tasks[recvDataSplit[1]]
-                        writeFile()
+                        writeFile(homeDir, tasks)
                         sock.sendto(b"SUCCESS", address)
                     else:
                         sock.sendto(b"ALREADY", address)
+
             elif recvDataSplit[0] == "purge":
                  if recvDataSplit[1] == "Y":
                     for taskKey in tasks:
@@ -154,12 +170,24 @@ while True:
                         unallowFirewall(tasks[taskKey]["proto"],tasks[taskKey]["sport"])
                     tasks = {}
                     threadWorking = {}
-                    writeFile()
+                    writeFile(homeDir, tasks)
                     sock.sendto(b"SUCCESS", address)
 
 
             elif recvDataSplit[0] == "get":
-                if recvDataSplit[1] == "engine_version":
+                if recvDataSplit[1] == "ls":
+                    strTasks = ""
+                    for i, taskKey in enumerate(tasks):
+                        if i == len(tasks) - 1:
+                            strTasks += tasks[taskKey]["id"] + "@" + tasks[taskKey]["ip_addr"] + "@" + tasks[taskKey]["proto"] + "@" + tasks[taskKey]["sport"] + "@" + tasks[taskKey]["dport"]
+                        else:
+                            strTasks += tasks[taskKey]["id"] + "@" + tasks[taskKey]["ip_addr"] + "@" + tasks[taskKey]["proto"] + "@" + tasks[taskKey]["sport"] + "@" + tasks[taskKey]["dport"] + "@@"
+                    if len(tasks) > 0:
+                        sock.sendto(strTasks.encode(), address)
+                    else:
+                        sock.sendto(b"FAILLED", address)
+
+                elif recvDataSplit[1] == "engine_version":
                     sock.sendto(engineVersion.encode(), address)
 
     except Exception as e:
