@@ -25,7 +25,7 @@ WSL2-forwarding-port-engine is backend of WSL2-forwarding-port cli
 5. Change window username in wfp-engine-autorun.vbs
 6. Move the binary into PATH.
 ```
-    mv ./wfp-engine.exe /mnt/c/Users/MRZacK/.wfp-engine
+    mv ./wfp-engine.exe /mnt/c/Users/<window-username>/.wfp-engine
 ```
 7. Grant permission to administrator to wfp-engine.exe
 8. Press key Win+R and paste wfp-engine-autorun.vbs to this below
